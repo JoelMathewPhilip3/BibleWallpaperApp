@@ -9,7 +9,7 @@ import org.json.JSONObject
 import kotlin.random.Random
 
 object PexelsPhotoProvider {
-    private const val API_KEY = "PASTE_YOUR_PEXELS_API_KEY_HERE"
+    private const val API_KEY = "jkUOQWpdX73pD2zpGUnw0oLyzHbHuM7fCxscFF1BcpFKk9cShmPnysxM"
     private const val PREFS = "pexels_photo_prefs"
     private const val USED_PHOTO_IDS = "used_pexels_photo_ids"
 
