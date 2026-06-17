@@ -1,5 +1,6 @@
 package com.joel.biblewallpaper
 
+import android.app.WallpaperManager
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.view.Gravity
@@ -8,6 +9,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -41,7 +43,7 @@ class MainActivity : android.app.Activity() {
         }
 
         val description = TextView(this).apply {
-            text = "The app downloads real nature scenery photos, adds a Bible verse, saves them here, and rotates saved wallpapers about every 20 minutes. New online photo wallpapers are created about every 8 hours."
+            text = "The app downloads real nature scenery photos, adds Bible verses, saves them here, and rotates saved wallpapers about every 10 minutes. New online photo wallpapers are created about every 8 hours."
             textSize = 17f
             setPadding(0, 0, 0, 20)
         }
@@ -66,7 +68,7 @@ class MainActivity : android.app.Activity() {
         }
 
         val note = TextView(this).apply {
-            text = "Saved wallpapers rotate about every 20 minutes. Android may delay background work during battery saver or heavy optimization modes."
+            text = "Tap any saved photo below to set it as wallpaper now. Automatic rotation will still continue about every 10 minutes."
             textSize = 13f
             setPadding(0, 24, 0, 28)
         }
@@ -108,34 +110,77 @@ class MainActivity : android.app.Activity() {
             return
         }
 
-        files.forEach { file ->
-            val label = TextView(this).apply {
-                text = dateFormat.format(Date(file.lastModified()))
-                textSize = 14f
-                setPadding(0, 20, 0, 8)
+        files.chunked(3).forEach { rowFiles ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, dp(10))
             }
 
-            val image = ImageView(this).apply {
-                adjustViewBounds = true
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
-                contentDescription = "Saved wallpaper"
+            rowFiles.forEach { file ->
+                val image = ImageView(this).apply {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
+                    contentDescription = "Saved wallpaper"
+
+                    setOnClickListener {
+                        try {
+                            val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                            WallpaperManager.getInstance(this@MainActivity).setBitmap(bitmap)
+
+                            getSharedPreferences(
+                                "saved_wallpaper_rotation_prefs",
+                                MODE_PRIVATE
+                            )
+                                .edit()
+                                .putString("last_rotated_wallpaper_path", file.absolutePath)
+                                .apply()
+
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Wallpaper set. Auto-rotation will still continue.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Could not set wallpaper.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                }
+
+                val params = LinearLayout.LayoutParams(
+                    0,
+                    dp(150),
+                    1f
+                ).apply {
+                    setMargins(dp(4), dp(4), dp(4), dp(4))
+                }
+
+                row.addView(image, params)
             }
 
-            val container = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_HORIZONTAL
-                addView(label)
-                addView(
-                    image,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
+            if (rowFiles.size < 3) {
+                repeat(3 - rowFiles.size) {
+                    val spacer = TextView(this)
+                    row.addView(
+                        spacer,
+                        LinearLayout.LayoutParams(
+                            0,
+                            dp(150),
+                            1f
+                        )
                     )
-                )
+                }
             }
 
-            galleryLayout.addView(container)
+            galleryLayout.addView(row)
         }
+    }
+
+    private fun dp(value: Int): Int {
+        return (value * resources.displayMetrics.density).toInt()
     }
 }
