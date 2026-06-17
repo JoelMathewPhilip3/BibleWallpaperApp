@@ -39,39 +39,47 @@ class MainActivity : android.app.Activity() {
             textSize = 28f
             setPadding(0, 0, 0, 18)
         }
+
         val description = TextView(this).apply {
-            text = "The app automatically creates a new scenic nature wallpaper with a Bible verse every 12 hours. Generated wallpapers are saved below so you can view previous ones."
+            text = "The app downloads real nature scenery photos, adds a Bible verse, saves them here, and rotates saved wallpapers about every 20 minutes. New online photo wallpapers are created about every 8 hours."
             textSize = 17f
             setPadding(0, 0, 0, 20)
         }
+
         val status = TextView(this).apply {
             val last = WallpaperHistoryStore.lastRunAt(this@MainActivity)
             text = if (last > 0L) {
-                "Last wallpaper: ${dateFormat.format(Date(last))}\nVerses used before repeat: ${WallpaperHistoryStore.usedVerseCount(this@MainActivity)} of ${Verses.all.size}"
+                "Last new wallpaper created: ${dateFormat.format(Date(last))}\nVerses used before repeat: ${WallpaperHistoryStore.usedVerseCount(this@MainActivity)} of ${Verses.all.size}\nSaved wallpapers: ${WallpaperHistoryStore.getHistoryFiles(this@MainActivity).size}"
             } else {
                 "Automatic schedule is active after the app is opened once. No wallpaper has been generated yet."
             }
             textSize = 14f
             setPadding(0, 0, 0, 22)
         }
+
         val button = Button(this).apply {
-            text = "Create Wallpaper Now"
+            text = "Create New Wallpaper Now"
             setOnClickListener {
                 WallpaperScheduler.runOnceNow(this@MainActivity)
-                postDelayed({ loadHistoryGallery() }, 2500)
+                postDelayed({ loadHistoryGallery() }, 4000)
             }
         }
+
         val note = TextView(this).apply {
-            text = "For best automatic updates, set this app to Unrestricted in Android battery settings. Android may delay background work during battery-saving modes."
+            text = "Saved wallpapers rotate about every 20 minutes. Android may delay background work during battery saver or heavy optimization modes."
             textSize = 13f
             setPadding(0, 24, 0, 28)
         }
+
         val historyTitle = TextView(this).apply {
             text = "Saved Wallpaper History"
             textSize = 22f
             setPadding(0, 8, 0, 16)
         }
-        galleryLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        galleryLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
 
         root.addView(title)
         root.addView(description)
@@ -80,17 +88,21 @@ class MainActivity : android.app.Activity() {
         root.addView(note)
         root.addView(historyTitle)
         root.addView(galleryLayout)
+
         scroll.addView(root)
         setContentView(scroll)
+
         loadHistoryGallery()
     }
 
     private fun loadHistoryGallery() {
         galleryLayout.removeAllViews()
+
         val files = WallpaperHistoryStore.getHistoryFiles(this)
+
         if (files.isEmpty()) {
             galleryLayout.addView(TextView(this).apply {
-                text = "No saved wallpapers yet. The first automatic wallpaper will appear here after it runs, or you can create one now."
+                text = "No saved wallpapers yet. Tap Create New Wallpaper Now, or wait for the automatic background task."
                 textSize = 15f
             })
             return
@@ -102,18 +114,27 @@ class MainActivity : android.app.Activity() {
                 textSize = 14f
                 setPadding(0, 20, 0, 8)
             }
+
             val image = ImageView(this).apply {
                 adjustViewBounds = true
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
                 contentDescription = "Saved wallpaper"
             }
+
             val container = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
                 addView(label)
-                addView(image, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+                addView(
+                    image,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                )
             }
+
             galleryLayout.addView(container)
         }
     }
