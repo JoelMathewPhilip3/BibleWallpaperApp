@@ -18,7 +18,7 @@ class MainActivity : android.app.Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WallpaperScheduler.scheduleEvery12Hours(this)
+        WallpaperScheduler.scheduleAll(this)
         buildUi()
     }
 
