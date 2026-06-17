@@ -1,0 +1,57 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Download Gradle 8.10.2
+        run: |
+          curl -L https://services.gradle.org/distributions/gradle-8.10.2-bin.zip -o gradle.zip
+          unzip -q gradle.zip
+
+      - name: Build debug APK
+        run: ./gradle-8.10.2/bin/gradle assembleDebug --stacktrace
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk BibleNatureWallpaper.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BibleNatureWallpaper.apk
+          path: BibleNatureWallpaper.apk
+
+      - name: Publish latest APK release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --cleanup-tag -y || true
+          git tag -f latest
+          git push origin latest --force
+          gh release create latest BibleNatureWallpaper.apk \
+            --title "Latest Bible Nature Wallpaper APK" \
+            --notes "Download BibleNatureWallpaper.apk on your Android phone and install it. Open the app once after installing so the automatic wallpaper schedule starts."
