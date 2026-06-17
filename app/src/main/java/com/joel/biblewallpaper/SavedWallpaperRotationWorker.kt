@@ -15,7 +15,7 @@ class SavedWallpaperRotationWorker(
 
     override suspend fun doWork(): Result {
         return try {
-            withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 val wallpaperManager = WallpaperManager.getInstance(applicationContext)
 
                 if (!wallpaperManager.isSetWallpaperAllowed) {
@@ -25,7 +25,7 @@ class SavedWallpaperRotationWorker(
                 val files = WallpaperHistoryStore.getHistoryFiles(applicationContext)
 
                 if (files.isEmpty()) {
-                    return@withContext Result.retry()
+                    return@withContext Result.success()
                 }
 
                 val prefs = applicationContext.getSharedPreferences(
@@ -52,6 +52,9 @@ class SavedWallpaperRotationWorker(
 
                 Result.success()
             }
+
+            WallpaperScheduler.scheduleNextSavedWallpaperRotationFromWorker(applicationContext)
+            result
         } catch (e: Exception) {
             Result.retry()
         }
