@@ -17,9 +17,9 @@ object WallpaperHistoryStore {
         ?.sortedByDescending { it.lastModified() }
         ?: emptyList()
 
-    fun save(context: Context, bitmap: Bitmap, verse: Verse): File {
+    fun save(context: Context, bitmap: Bitmap, verse: Verse, sceneName: String): File {
         val safeReference = verse.reference.replace(Regex("[^A-Za-z0-9]+"), "_").trim('_')
-        val file = File(historyDir(context), "${System.currentTimeMillis()}_${safeReference}.png")
+        val file = File(historyDir(context), "${System.currentTimeMillis()}_${sceneName.replace(" ", "_")}_${safeReference}.png")
         FileOutputStream(file).use { out -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, out) }
         rememberVerse(context, verse)
         setLastRunAt(context, System.currentTimeMillis())
