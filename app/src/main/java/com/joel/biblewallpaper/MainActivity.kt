@@ -170,7 +170,7 @@ class MainActivity : android.app.Activity() {
             rowFiles.forEach { file ->
                 val image = ImageView(this).apply {
                     scaleType = ImageView.ScaleType.CENTER_CROP
-                    setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
+                    setImageBitmap(loadThumbnail(file.absolutePath, dp(220), dp(220)))
                     contentDescription = "Saved wallpaper"
 
                     setOnClickListener {
@@ -203,7 +203,7 @@ class MainActivity : android.app.Activity() {
 
                 val params = LinearLayout.LayoutParams(
                     0,
-                    dp(150),
+                    dp(110),
                     1f
                 ).apply {
                     setMargins(dp(4), dp(4), dp(4), dp(4))
@@ -230,6 +230,43 @@ class MainActivity : android.app.Activity() {
         }
     }
 
+private fun loadThumbnail(path: String, reqWidth: Int, reqHeight: Int): android.graphics.Bitmap? {
+    val options = BitmapFactory.Options().apply {
+        inJustDecodeBounds = true
+    }
+
+    BitmapFactory.decodeFile(path, options)
+
+    options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
+    options.inJustDecodeBounds = false
+
+    return BitmapFactory.decodeFile(path, options)
+}
+
+private fun calculateInSampleSize(
+    options: BitmapFactory.Options,
+    reqWidth: Int,
+    reqHeight: Int
+): Int {
+    val height = options.outHeight
+    val width = options.outWidth
+    var inSampleSize = 1
+
+    if (height > reqHeight || width > reqWidth) {
+        val halfHeight = height / 2
+        val halfWidth = width / 2
+
+        while (
+            halfHeight / inSampleSize >= reqHeight &&
+            halfWidth / inSampleSize >= reqWidth
+        ) {
+            inSampleSize *= 2
+        }
+    }
+
+    return inSampleSize
+}
+    
     private fun dp(value: Int): Int {
         return (value * resources.displayMetrics.density).toInt()
     }
