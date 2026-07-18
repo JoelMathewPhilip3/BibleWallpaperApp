@@ -14,7 +14,35 @@ object WallpaperScheduler {
     private const val PHOTO_DOWNLOAD_WORK_NAME = "bible_wallpaper_photo_download_worker"
     private const val SAVED_ROTATION_WORK_NAME = "saved_wallpaper_10_min_rotation_worker"
 
+    private const val PREFS = "wallpaper_settings"
+    private const val NEW_WALLPAPER_CREATION_ENABLED = "new_wallpaper_creation_enabled"
+
+    fun isNewWallpaperCreationEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(NEW_WALLPAPER_CREATION_ENABLED, true)
+    }
+
+    fun stopNewWallpaperCreation(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(NEW_WALLPAPER_CREATION_ENABLED, false)
+            .apply()
+
+        WorkManager.getInstance(context).cancelUniqueWork(PHOTO_DOWNLOAD_WORK_NAME)
+    }
+
+    fun startNewWallpaperCreation(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(NEW_WALLPAPER_CREATION_ENABLED, true)
+            .apply()
+
+        scheduleEvery8Hours(context)
+    }
+
     fun scheduleEvery8Hours(context: Context) {
+        if (!isNewWallpaperCreationEnabled(context)) return
+
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .setRequiresBatteryNotLow(true)
@@ -78,6 +106,8 @@ object WallpaperScheduler {
     }
 
     fun runOnceNow(context: Context) {
+        if (!isNewWallpaperCreationEnabled(context)) return
+
         val request = OneTimeWorkRequestBuilder<WallpaperWorker>()
             .setConstraints(
                 Constraints.Builder()
