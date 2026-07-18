@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 
 object WallpaperScheduler {
     private const val PHOTO_DOWNLOAD_WORK_NAME = "bible_wallpaper_photo_download_worker"
-    private const val SAVED_ROTATION_WORK_NAME = "saved_wallpaper_10_min_rotation_worker"
+    private const val SAVED_ROTATION_WORK_NAME = "saved_wallpaper_60_min_rotation_worker"
 
     private const val PREFS = "wallpaper_settings"
     private const val NEW_WALLPAPER_CREATION_ENABLED = "new_wallpaper_creation_enabled"
@@ -71,7 +71,7 @@ object WallpaperScheduler {
             .build()
 
         val request = OneTimeWorkRequestBuilder<SavedWallpaperRotationWorker>()
-            .setInitialDelay(10, TimeUnit.MINUTES)
+            .setInitialDelay(60, TimeUnit.MINUTES)
             .setConstraints(constraints)
             .build()
 
@@ -89,7 +89,7 @@ object WallpaperScheduler {
             .build()
 
         val request = OneTimeWorkRequestBuilder<SavedWallpaperRotationWorker>()
-            .setInitialDelay(10, TimeUnit.MINUTES)
+            .setInitialDelay(60, TimeUnit.MINUTES)
             .setConstraints(constraints)
             .build()
 
