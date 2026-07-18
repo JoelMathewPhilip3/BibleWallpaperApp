@@ -15,6 +15,10 @@ class WallpaperWorker(
 
     override suspend fun doWork(): Result {
         return try {
+            if (!WallpaperScheduler.isNewWallpaperCreationEnabled(applicationContext)) {
+                return Result.success()
+            }
+
             withContext(Dispatchers.IO) {
                 val wallpaperManager = WallpaperManager.getInstance(applicationContext)
 
