@@ -43,27 +43,75 @@ class MainActivity : android.app.Activity() {
         }
 
         val description = TextView(this).apply {
-            text = "The app downloads real nature scenery photos, adds Bible verses, saves them here, and rotates saved wallpapers about every 10 minutes. New online photo wallpapers are created about every 8 hours."
+            text = "The app downloads real nature scenery photos, adds Bible verses, saves them here, and rotates saved wallpapers about every 10 minutes. New online photo wallpapers are created about every 8 hours unless stopped."
             textSize = 17f
             setPadding(0, 0, 0, 20)
         }
 
         val status = TextView(this).apply {
             val last = WallpaperHistoryStore.lastRunAt(this@MainActivity)
-            text = if (last > 0L) {
-                "Last new wallpaper created: ${dateFormat.format(Date(last))}\nVerses used before repeat: ${WallpaperHistoryStore.usedVerseCount(this@MainActivity)} of ${Verses.all.size}\nSaved wallpapers: ${WallpaperHistoryStore.getHistoryFiles(this@MainActivity).size}"
+            val creationStatus = if (WallpaperScheduler.isNewWallpaperCreationEnabled(this@MainActivity)) {
+                "New wallpaper creation: ON"
             } else {
-                "Automatic schedule is active after the app is opened once. No wallpaper has been generated yet."
+                "New wallpaper creation: STOPPED"
             }
+
+            text = if (last > 0L) {
+                "$creationStatus\nLast new wallpaper created: ${dateFormat.format(Date(last))}\nVerses used before repeat: ${WallpaperHistoryStore.usedVerseCount(this@MainActivity)} of ${Verses.all.size}\nSaved wallpapers: ${WallpaperHistoryStore.getHistoryFiles(this@MainActivity).size}"
+            } else {
+                "$creationStatus\nAutomatic rotation is active after the app is opened once. No wallpaper has been generated yet."
+            }
+
             textSize = 14f
             setPadding(0, 0, 0, 22)
         }
 
-        val button = Button(this).apply {
+        val createButton = Button(this).apply {
             text = "Create New Wallpaper Now"
+            isEnabled = WallpaperScheduler.isNewWallpaperCreationEnabled(this@MainActivity)
+
             setOnClickListener {
                 WallpaperScheduler.runOnceNow(this@MainActivity)
                 postDelayed({ loadHistoryGallery() }, 4000)
+            }
+        }
+
+        val stopCreationButton = Button(this).apply {
+            text = if (WallpaperScheduler.isNewWallpaperCreationEnabled(this@MainActivity)) {
+                "Stop Creating New Wallpapers"
+            } else {
+                "New Wallpaper Creation Stopped"
+            }
+
+            setOnClickListener {
+                WallpaperScheduler.stopNewWallpaperCreation(this@MainActivity)
+
+                text = "New Wallpaper Creation Stopped"
+                createButton.isEnabled = false
+
+                Toast.makeText(
+                    this@MainActivity,
+                    "New wallpapers stopped. Saved wallpapers will still rotate.",
+                    Toast.LENGTH_LONG
+                ).show()
+
+                buildUi()
+            }
+        }
+
+        val startCreationButton = Button(this).apply {
+            text = "Start Creating New Wallpapers Again"
+
+            setOnClickListener {
+                WallpaperScheduler.startNewWallpaperCreation(this@MainActivity)
+
+                Toast.makeText(
+                    this@MainActivity,
+                    "New wallpaper creation restarted.",
+                    Toast.LENGTH_LONG
+                ).show()
+
+                buildUi()
             }
         }
 
@@ -86,7 +134,9 @@ class MainActivity : android.app.Activity() {
         root.addView(title)
         root.addView(description)
         root.addView(status)
-        root.addView(button)
+        root.addView(createButton)
+        root.addView(stopCreationButton)
+        root.addView(startCreationButton)
         root.addView(note)
         root.addView(historyTitle)
         root.addView(galleryLayout)
