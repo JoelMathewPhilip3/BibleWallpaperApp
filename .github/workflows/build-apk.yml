@@ -15,32 +15,26 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-35 build-tools;34.0.0'
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-
       - name: Restore development signing key
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
           key: bible-nature-widget-development-key-v2
-
       - name: Use optional backed-up development key
         env:
           DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
@@ -49,19 +43,15 @@ jobs:
             mkdir -p "$HOME/.android"
             printf '%s' "$DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
           fi
-
       - name: Build, test and lint
         run: gradle assembleDebug testDebugUnitTest lintDebug --console=plain
-
       - name: Name APK
         run: cp app/build/outputs/apk/debug/app-debug.apk BibleNatureWidget.apk
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: BibleNatureWidget-APK
           path: BibleNatureWidget.apk
-
       - name: Upload check reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -71,19 +61,13 @@ jobs:
             app/build/reports/tests/
             app/build/reports/lint-results-debug.html
           if-no-files-found: ignore
-
       - name: Publish latest APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view latest > /dev/null 2>&1; then
             gh release upload latest BibleNatureWidget.apk --clobber
-            gh release edit latest \
-              --title "Bible Nature Widget 2.0" \
-              --notes "Landscape Bible verse widget. Download, install, open once, then add through Good Lock / LockStar."
+            gh release edit latest --title "Bible Nature Widget 2.1" --notes "Landscape Bible verse widget with shuffle, Previous/Next, adjustable intervals and optional automatic downloads."
           else
-            gh release create latest BibleNatureWidget.apk \
-              --target "$GITHUB_SHA" \
-              --title "Bible Nature Widget 2.0" \
-              --notes "Landscape Bible verse widget. Download, install, open once, then add through Good Lock / LockStar."
+            gh release create latest BibleNatureWidget.apk --target "$GITHUB_SHA" --title "Bible Nature Widget 2.1" --notes "Landscape Bible verse widget with shuffle, Previous/Next, adjustable intervals and optional automatic downloads."
           fi
