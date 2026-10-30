@@ -17,13 +17,13 @@ object PexelsPhotoProvider {
     private const val API_KEY = "jkUOQWpdX73pD2zpGUnw0oLyzHbHuM7fCxscFF1BcpFKk9cShmPnysxM"
     private val client = OkHttpClient.Builder()
         .addInterceptor { chain -> chain.proceed(chain.request().newBuilder()
-            .header("User-Agent", "BibleNatureWidget/2.0 (Android)").build()) }
+            .header("User-Agent", "BibleNatureWidget/2.1 (Android)").build()) }
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS).callTimeout(60, TimeUnit.SECONDS).build()
     private val queries = listOf("mountain landscape", "lake sunrise", "ocean sunset", "forest landscape",
         "waterfall nature", "green meadow", "snow mountains", "river valley", "tropical beach", "northern lights landscape")
 
-    fun getFreshNaturePhoto(context: Context): NaturePhoto {
+    suspend fun getFreshNaturePhoto(context: Context): NaturePhoto {
         val used = WallpaperHistoryStore.usedPhotoIds(context)
         repeat(3) { attempt ->
             val query = queries.random()
@@ -32,7 +32,7 @@ object PexelsPhotoProvider {
                 .addQueryParameter("query", query).addQueryParameter("orientation", "landscape")
                 .addQueryParameter("per_page", "30").addQueryParameter("page", page.toString()).build()
             val photos = client.newCall(Request.Builder().url(url).header("Authorization", API_KEY).build())
-                .execute().use { response ->
+                .awaitResponse().use { response ->
                     if (!response.isSuccessful) throw PhotoHttpException(response.code)
                     JSONObject(response.body?.string() ?: throw IOException("Empty photo search response"))
                         .getJSONArray("photos")
@@ -43,7 +43,7 @@ object PexelsPhotoProvider {
             val selected = fresh.randomOrNull() ?: if (attempt == 2) candidates.randomOrNull() else null
             if (selected != null) {
                 val imageUrl = selected.getJSONObject("src").getString("landscape")
-                val bitmap = client.newCall(Request.Builder().url(imageUrl).build()).execute().use { response ->
+                val bitmap = client.newCall(Request.Builder().url(imageUrl).build()).awaitResponse().use { response ->
                     if (!response.isSuccessful) throw PhotoHttpException(response.code)
                     val bytes = response.body?.bytes() ?: throw IOException("Empty photo download")
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: throw IOException("Invalid photo")

@@ -1,6 +1,10 @@
 <resources>
     <string name="app_name">Bible Nature Widget</string>
-    <string name="widget_description">Landscape nature photos with clearly readable Bible verses. Battery saver refresh every four hours.</string>
+    <string name="widget_description">Landscape nature photos with clearly readable Bible verses. Adjustable battery-conscious shuffle rotation.</string>
     <string name="text_size_label">Text size: %1$d</string>
     <string name="darkness_label">Dark backing: %1$d%%</string>
+    <string name="previous_arrow" translatable="false">‹</string>
+    <string name="next_arrow" translatable="false">›</string>
+    <string name="previous_card">Previous saved card</string>
+    <string name="next_card">Next saved card</string>
 </resources>

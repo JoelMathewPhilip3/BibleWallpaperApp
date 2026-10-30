@@ -8,7 +8,7 @@ import android.text.TextPaint
 
 /** Images remain separate from verses in storage; this composes only the displayed card. */
 object WallpaperImageCreator {
-    fun render(context: Context, card: VerseCard?, width: Int = 960, height: Int = 540): Bitmap {
+    fun render(context: Context, card: VerseCard?, width: Int = 960, height: Int = 540, bottomInset: Int = 0): Bitmap {
         val w = width.coerceIn(360, 960)
         val h = height.coerceIn(180, 720)
         val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -53,7 +53,8 @@ object WallpaperImageCreator {
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
         }
         val maxWidth = (w*.82f).toInt()
-        val availableHeight = h*.72f
+        val contentHeight = (h-bottomInset).coerceAtLeast((h*.55f).toInt()).toFloat()
+        val availableHeight = contentHeight*.72f
         var size = WidgetSettings.textSize(context) * w / 340f
         var quote: StaticLayout
         var reference: StaticLayout
@@ -68,10 +69,10 @@ object WallpaperImageCreator {
             size *= .94f
         }
         val total = quote.height + reference.height + gap
-        val top = (h-total)/2f
+        val top = (contentHeight-total)/2f
         paint.color = Color.argb((dark*235).toInt(), 0,0,0)
         canvas.drawRoundRect(RectF(w*.055f, (top-h*.06f).coerceAtLeast(h*.03f), w*.945f,
-            (top+total+h*.06f).coerceAtMost(h*.97f)), w*.025f,w*.025f,paint)
+            (top+total+h*.06f).coerceAtMost(contentHeight*.97f)), w*.025f,w*.025f,paint)
         canvas.save()
         canvas.translate((w-maxWidth)/2f, top)
         quote.draw(canvas)

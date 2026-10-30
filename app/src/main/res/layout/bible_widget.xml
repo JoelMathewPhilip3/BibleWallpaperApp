@@ -3,4 +3,16 @@
     <ImageView android:id="@+id/widget_image" android:layout_width="match_parent"
         android:layout_height="match_parent" android:scaleType="fitCenter"
         android:src="@drawable/widget_placeholder" android:contentDescription="@string/widget_description" />
+    <TextView android:id="@+id/widget_previous" android:layout_width="44dp"
+        android:layout_height="32dp" android:layout_gravity="bottom|start"
+        android:layout_marginStart="8dp" android:layout_marginBottom="4dp"
+        android:gravity="center" android:text="@string/previous_arrow" android:textSize="24sp"
+        android:textColor="#FFFFFF" android:background="@drawable/widget_control"
+        android:contentDescription="@string/previous_card" />
+    <TextView android:id="@+id/widget_next" android:layout_width="44dp"
+        android:layout_height="32dp" android:layout_gravity="bottom|end"
+        android:layout_marginEnd="8dp" android:layout_marginBottom="4dp"
+        android:gravity="center" android:text="@string/next_arrow" android:textSize="24sp"
+        android:textColor="#FFFFFF" android:background="@drawable/widget_control"
+        android:contentDescription="@string/next_card" />
 </FrameLayout>

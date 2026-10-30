@@ -30,7 +30,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var status: TextView
     private lateinit var emptyNote: TextView
     private lateinit var download: Button
-    private lateinit var pause: Button
+    private lateinit var autoDownload: Button
+    private lateinit var previous: Button
+    private lateinit var next: Button
     private lateinit var gallery: LinearLayout
     @Volatile private var renderGeneration = 0
     private var galleryLimit = 12
@@ -43,6 +45,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WallpaperScheduler.scheduleAll(this)
         buildUi()
+        io.execute { BibleWidgetProvider.refreshAll(applicationContext) }
         WorkManager.getInstance(this).getWorkInfosByTagLiveData(WallpaperScheduler.TAG).observe(this) { works ->
             downloadPending = works.any { "manual_download" in it.tags &&
                 (it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.BLOCKED) }
@@ -83,7 +86,7 @@ class MainActivity : ComponentActivity() {
         emptyNote = label("",14).apply { setTextColor(muted); setPadding(0,dp(10),0,dp(10)) }
         root.addView(emptyNote)
         val setup = panel("Lock screen setup")
-        setup.addView(label("1. Download your first photo below.\n2. Open Good Lock → LockStar → edit your lock screen.\n3. Add the Bible Nature Widget and resize it into a wide card.\n\nYou can also place it on your home screen. Tapping the widget opens this app.",15))
+        setup.addView(label("1. Download your first photo below.\n2. Open Good Lock → LockStar → edit your lock screen.\n3. Add the Bible Nature Widget and resize it into a wide card.\n\nYou can also place it on your home screen. Tap the picture to open this app, or use the widget’s arrows to change cards.",15))
         setup.addView(button("Add home screen widget") { requestWidget() })
         setup.addView(label("LockStar controls availability, placement and final size. If it is missing there, add it to the home screen first, then reopen LockStar.",13).apply { setTextColor(muted) })
 
@@ -98,15 +101,41 @@ class MainActivity : ComponentActivity() {
         }
         controls.addView(download)
         controls.addView(label("Manual downloads can use mobile data and do not require charging.",12).apply { setTextColor(muted) })
-        controls.addView(button("Next saved image") { WallpaperScheduler.nextNow(this) })
-        pause = button(pauseText()) {
-            WidgetSettings.setPaused(this,!WidgetSettings.paused(this))
-            WallpaperScheduler.scheduleAll(this)
-            pause.text = pauseText()
-            status.text = makeStatus()
+        val navigation = LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
+        previous = button("‹ Previous") { WallpaperScheduler.previousNow(this) }
+        next = button("Next ›") { WallpaperScheduler.nextNow(this) }
+        navigation.addView(previous,LinearLayout.LayoutParams(0,-2,1f))
+        navigation.addView(next,LinearLayout.LayoutParams(0,-2,1f))
+        controls.addView(navigation)
+        controls.addView(label("Shuffle without repeats. Previous returns to a card you saw; Next follows that history before drawing a fresh card.",13).apply { setTextColor(muted) })
+        controls.addView(label("Automatic rotation interval",15,true).apply { setPadding(0,dp(16),0,dp(4)) })
+        val interval = Spinner(this).apply {
+            contentDescription = "Automatic rotation interval"
+            adapter = ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_item,
+                RotationIntervals.choices.map { it.label }).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            setSelection(RotationIntervals.choices.indexOfFirst { it.minutes == WidgetSettings.rotationMinutes(this@MainActivity) })
         }
-        controls.addView(pause)
-        controls.addView(label("Pausing holds the current card. Daily downloads may still save new photos in the gallery.",13).apply { setTextColor(muted) })
+        controls.addView(interval,LinearLayout.LayoutParams(-1,dp(48)))
+        interval.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?,view: View?,position: Int,id: Long) {
+                val minutes = RotationIntervals.choices[position].minutes
+                if (minutes != WidgetSettings.rotationMinutes(this@MainActivity)) {
+                    WidgetSettings.setRotationMinutes(this@MainActivity,minutes)
+                    WallpaperScheduler.scheduleAll(this@MainActivity,resetRotation=true)
+                    status.text=makeStatus()
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+        controls.addView(label("Manual only stops timed rotation. Previous and Next still work. Other intervals are approximate; Android may delay them.",13).apply { setTextColor(muted) })
+        autoDownload = button(autoDownloadText()) {
+            WidgetSettings.setAutoDownloadsEnabled(this,!WidgetSettings.autoDownloadsEnabled(this))
+            WallpaperScheduler.scheduleAll(this)
+            autoDownload.text=autoDownloadText()
+            status.text=makeStatus()
+        }
+        controls.addView(autoDownload)
+        controls.addView(label("Automatic downloads start OFF. When enabled: about one new photo daily, while charging on an unmetered connection (usually Wi-Fi). Stop cancels automatic downloads; Download now always remains available.",13).apply { setTextColor(muted) })
 
         val appearance = panel("Make the verse clear")
         appearance.addView(label("Text size is automatically reduced only when needed to fit the full verse.",14))
@@ -126,7 +155,7 @@ class MainActivity : ComponentActivity() {
         })
 
         val battery = panel("Battery saver · default")
-        battery.addView(label("Saved images rotate about every 4 hours. A new photo downloads about once daily, only while charging on an unmetered connection (usually Wi-Fi).\n\nAndroid may delay updates. Keep battery mode Optimized. Cached photos remain visible offline; no continuously running service is needed. Scheduled work stops when the last widget is removed.",14))
+        battery.addView(label("Rotation uses only saved cards at your selected interval. Automatic downloads are optional and separate from rotation.\n\nAndroid may delay updates. Keep battery mode Optimized. Cached photos remain visible offline; no continuously running service is needed. Scheduled work stops when the last widget is removed.",14))
         val historyPanel = panel("Saved landscape photos")
         historyPanel.addView(label("Tap a photo to preview it. Choose Use in widget to select it. All widget copies share this selection and appearance.",14).apply { setTextColor(muted) })
         gallery = column()
@@ -147,17 +176,19 @@ class MainActivity : ComponentActivity() {
             })
         }
         root.addView(button("Photos provided by Pexels ↗") { openUrl("https://www.pexels.com") })
-        root.addView(label("Bible Nature Widget · 2.0",12).apply { gravity=Gravity.CENTER; setTextColor(muted) })
+        root.addView(label("Bible Nature Widget · 2.1",12).apply { gravity=Gravity.CENTER; setTextColor(muted) })
         refreshImages()
     }
     private fun makeStatus(running: Boolean = false): String {
         val count = WallpaperHistoryStore.cards(this).size
         val active = if (BibleWidgetProvider.hasWidgets(this)) "Widget placed" else "No widget placed · automatic work stopped"
-        val state = if (WidgetSettings.paused(this)) "Rotation paused" else "Rotation: about every 4 hours"
+        val state = if (count < 2 && !WidgetSettings.paused(this)) "Shuffle waiting for at least 2 saved cards" else if (WidgetSettings.paused(this)) "Rotation: manual only" else
+            "Shuffle: about every ${RotationIntervals.label(WidgetSettings.rotationMinutes(this)).lowercase(Locale.getDefault())}"
+        val auto = if (WidgetSettings.autoDownloadsEnabled(this)) "Automatic downloads: ON" else "Automatic downloads: OFF"
         val message = if (running) "Working…" else if (downloadPending) "Download queued; waiting for a connection or Android to run it." else WidgetSettings.status(this)
-        return "$active\n$state · $count saved\n$message"
+        return "$active\n$state · $count saved\n$auto\n$message"
     }
-    private fun pauseText() = if (WidgetSettings.paused(this)) "Resume automatic rotation" else "Pause automatic rotation"
+    private fun autoDownloadText() = if (WidgetSettings.autoDownloadsEnabled(this)) "Stop automatic downloads" else "Start automatic downloads"
     private fun refreshImages() {
         val generation = ++renderGeneration
         val limit = galleryLimit
@@ -172,6 +203,8 @@ class MainActivity : ComponentActivity() {
                     if (isDestroyed || generation != renderGeneration) {
                         rendered.recycle(); thumbs.forEach { it.second.recycle() }; return@runOnUiThread
                     }
+                    previous.isEnabled = WallpaperHistoryStore.canPrevious(this)
+                    next.isEnabled = cards.isNotEmpty()
                     preview.setImageBitmap(rendered)
                     emptyNote.text = if (cards.isEmpty()) "Offline starter card · download a photo to begin." else "Current verse: ${current?.verse?.reference.orEmpty()}"
                     gallery.removeAllViews()
@@ -226,6 +259,7 @@ class MainActivity : ComponentActivity() {
         io.execute {
             try {
                 action()
+                WallpaperScheduler.scheduleAll(this)
                 runOnUiThread { if(!isDestroyed) { status.text=makeStatus(); refreshImages() } }
             } catch (_: Exception) { runOnUiThread { if(!isDestroyed) toast("Could not complete that change. Please try again.") } }
         }
