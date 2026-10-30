@@ -1,0 +1,7 @@
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="280dp" android:minHeight="158dp"
+    android:minResizeWidth="180dp" android:minResizeHeight="100dp"
+    android:targetCellWidth="4" android:targetCellHeight="2"
+    android:resizeMode="horizontal|vertical" android:updatePeriodMillis="0"
+    android:initialLayout="@layout/bible_widget" android:previewLayout="@layout/bible_widget"
+    android:description="@string/widget_description" android:widgetCategory="home_screen|keyguard" />

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bible Nature Wallpaper App</title>
+  <title>Bible Nature Widget</title>
   <style>
     body {
       margin: 0;
@@ -63,9 +63,9 @@
 </head>
 <body>
   <main class="card">
-    <h1>Bible Nature Wallpaper App</h1>
+    <h1>Bible Nature Widget</h1>
     <p>
-      This Android app automatically creates scenic nature wallpapers with Bible verses and updates your wallpaper about every 8 hours.
+      Landscape nature photos with clearly readable Bible verses, displayed as a home screen or LockStar widget. Saved images rotate approximately every four hours; new photos download daily while charging on Wi-Fi.
     </p>
 
     <a id="downloadButton" class="button" href="#">Download Android APK</a>
@@ -80,7 +80,7 @@
       <li>Tap <strong>Download Android APK</strong>.</li>
       <li>Open the downloaded file.</li>
       <li>Allow install from browser/files if Android asks.</li>
-      <li>Open the app once after installing so the automatic schedule starts.</li>
+      <li>Open the app, download your first photo, then add Bible Nature Widget through Good Lock / LockStar or your home screen widgets.</li>
     </ul>
 
     <p class="small">
@@ -92,7 +92,7 @@
     const hostParts = window.location.hostname.split('.');
     const username = hostParts[0];
     const repo = window.location.pathname.split('/').filter(Boolean)[0] || 'BibleWallpaperApp';
-    const releaseUrl = `https://github.com/${username}/${repo}/releases/download/latest/BibleNatureWallpaper.apk`;
+    const releaseUrl = `https://github.com/${username}/${repo}/releases/download/latest/BibleNatureWidget.apk`;
     document.getElementById('downloadButton').href = releaseUrl;
     document.getElementById('downloadHelp').innerHTML = `Download source: <code>${username}/${repo}</code> latest GitHub Release. If it fails, run the GitHub Action first.`;
   </script>

@@ -1,273 +1,268 @@
 package com.joel.biblewallpaper
 
-import android.app.WallpaperManager
-import android.graphics.BitmapFactory
+import android.app.AlertDialog
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
+import android.content.Intent
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
-import android.widget.Button
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
+import android.view.View
+import android.widget.*
+import androidx.activity.ComponentActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.Executors
 
-class MainActivity : android.app.Activity() {
-    private lateinit var galleryLayout: LinearLayout
-    private val dateFormat = SimpleDateFormat("MMM d, yyyy h:mm a", Locale.getDefault())
+class MainActivity : ComponentActivity() {
+    private val io = Executors.newSingleThreadExecutor()
+    private lateinit var root: LinearLayout
+    private lateinit var preview: ImageView
+    private lateinit var status: TextView
+    private lateinit var emptyNote: TextView
+    private lateinit var download: Button
+    private lateinit var pause: Button
+    private lateinit var gallery: LinearLayout
+    @Volatile private var renderGeneration = 0
+    private var galleryLimit = 12
+    private var downloadPending = false
+    private val ink = Color.rgb(35,49,44)
+    private val muted = Color.rgb(100,109,100)
+    private val dateFormat = SimpleDateFormat("MMM d, yyyy · h:mm a",Locale.getDefault())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WallpaperScheduler.scheduleAll(this)
         buildUi()
+        WorkManager.getInstance(this).getWorkInfosByTagLiveData(WallpaperScheduler.TAG).observe(this) { works ->
+            downloadPending = works.any { "manual_download" in it.tags &&
+                (it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.BLOCKED) }
+            download.isEnabled = !downloadPending
+            download.text = if (downloadPending) "Download queued / running…" else "Download new photo now"
+            status.text = makeStatus(works.any { it.state == WorkInfo.State.RUNNING })
+            refreshImages()
+        }
     }
-
     override fun onResume() {
         super.onResume()
-        if (::galleryLayout.isInitialized) loadHistoryGallery()
+        if (::preview.isInitialized) { status.text = makeStatus(); refreshImages() }
     }
+    override fun onDestroy() { renderGeneration++; io.shutdown(); super.onDestroy() }
 
     private fun buildUi() {
-        val scroll = ScrollView(this)
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(42, 70, 42, 42)
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(getColor(R.color.app_background)); clipToPadding = false
         }
-
-        val title = TextView(this).apply {
-            text = "Bible Nature Wallpaper"
-            textSize = 28f
-            setPadding(0, 0, 0, 18)
+        ViewCompat.setOnApplyWindowInsetsListener(scroll) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
         }
-
-        val description = TextView(this).apply {
-            text = "The app downloads real nature scenery photos, adds Bible verses, saves them here, and rotates saved wallpapers about every 10 minutes. New online photo wallpapers are created about every 8 hours unless stopped."
-            textSize = 17f
-            setPadding(0, 0, 0, 20)
-        }
-
-        val status = TextView(this).apply {
-            val last = WallpaperHistoryStore.lastRunAt(this@MainActivity)
-            val creationStatus = if (WallpaperScheduler.isNewWallpaperCreationEnabled(this@MainActivity)) {
-                "New wallpaper creation: ON"
-            } else {
-                "New wallpaper creation: STOPPED"
-            }
-
-            text = if (last > 0L) {
-                "$creationStatus\nLast new wallpaper created: ${dateFormat.format(Date(last))}\nVerses used before repeat: ${WallpaperHistoryStore.usedVerseCount(this@MainActivity)} of ${Verses.all.size}\nSaved wallpapers: ${WallpaperHistoryStore.getHistoryFiles(this@MainActivity).size}"
-            } else {
-                "$creationStatus\nAutomatic rotation is active after the app is opened once. No wallpaper has been generated yet."
-            }
-
-            textSize = 14f
-            setPadding(0, 0, 0, 22)
-        }
-
-        val createButton = Button(this).apply {
-            text = "Create New Wallpaper Now"
-            isEnabled = WallpaperScheduler.isNewWallpaperCreationEnabled(this@MainActivity)
-
-            setOnClickListener {
-                WallpaperScheduler.runOnceNow(this@MainActivity)
-                postDelayed({ loadHistoryGallery() }, 4000)
-            }
-        }
-
-        val stopCreationButton = Button(this).apply {
-            text = if (WallpaperScheduler.isNewWallpaperCreationEnabled(this@MainActivity)) {
-                "Stop Creating New Wallpapers"
-            } else {
-                "New Wallpaper Creation Stopped"
-            }
-
-            setOnClickListener {
-                WallpaperScheduler.stopNewWallpaperCreation(this@MainActivity)
-
-                text = "New Wallpaper Creation Stopped"
-                createButton.isEnabled = false
-
-                Toast.makeText(
-                    this@MainActivity,
-                    "New wallpapers stopped. Saved wallpapers will still rotate.",
-                    Toast.LENGTH_LONG
-                ).show()
-
-                buildUi()
-            }
-        }
-
-        val startCreationButton = Button(this).apply {
-            text = "Start Creating New Wallpapers Again"
-
-            setOnClickListener {
-                WallpaperScheduler.startNewWallpaperCreation(this@MainActivity)
-
-                Toast.makeText(
-                    this@MainActivity,
-                    "New wallpaper creation restarted.",
-                    Toast.LENGTH_LONG
-                ).show()
-
-                buildUi()
-            }
-        }
-
-        val note = TextView(this).apply {
-            text = "Tap any saved photo below to set it as wallpaper now. Automatic rotation will still continue about every 10 minutes."
-            textSize = 13f
-            setPadding(0, 24, 0, 28)
-        }
-
-        val historyTitle = TextView(this).apply {
-            text = "Saved Wallpaper History"
-            textSize = 22f
-            setPadding(0, 8, 0, 16)
-        }
-
-        galleryLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-
-        root.addView(title)
-        root.addView(description)
-        root.addView(status)
-        root.addView(createButton)
-        root.addView(stopCreationButton)
-        root.addView(startCreationButton)
-        root.addView(note)
-        root.addView(historyTitle)
-        root.addView(galleryLayout)
-
+        root = column().apply { setPadding(dp(20),dp(24),dp(20),dp(32)) }
         scroll.addView(root)
         setContentView(scroll)
+        ViewCompat.requestApplyInsets(scroll)
+        root.addView(label("BIBLE NATURE",13,true).apply { letterSpacing = .15f; setTextColor(muted) })
+        root.addView(label("A moment of stillness",29,true).apply { setPadding(0,dp(8),0,dp(6)) })
+        root.addView(label("Landscape scenery. Scripture you can read at a glance.",16).apply { setTextColor(muted) })
+        preview = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = "Preview of your current Bible verse widget"
+            adjustViewBounds = true
+        }
+        root.addView(preview, LinearLayout.LayoutParams(-1,dp(((resources.displayMetrics.widthPixels/resources.displayMetrics.density-40)/1.777f).toInt())).apply { topMargin=dp(20) })
+        emptyNote = label("",14).apply { setTextColor(muted); setPadding(0,dp(10),0,dp(10)) }
+        root.addView(emptyNote)
+        val setup = panel("Lock screen setup")
+        setup.addView(label("1. Download your first photo below.\n2. Open Good Lock → LockStar → edit your lock screen.\n3. Add the Bible Nature Widget and resize it into a wide card.\n\nYou can also place it on your home screen. Tapping the widget opens this app.",15))
+        setup.addView(button("Add home screen widget") { requestWidget() })
+        setup.addView(label("LockStar controls availability, placement and final size. If it is missing there, add it to the home screen first, then reopen LockStar.",13).apply { setTextColor(muted) })
 
-        loadHistoryGallery()
-    }
+        val controls = panel("Your widget")
+        status = label(makeStatus(),14).apply { setTextColor(muted) }
+        controls.addView(status)
+        download = button("Download new photo now") {
+            if (!downloadPending) {
+                download.isEnabled = false
+                WallpaperScheduler.downloadNow(this)
+            }
+        }
+        controls.addView(download)
+        controls.addView(label("Manual downloads can use mobile data and do not require charging.",12).apply { setTextColor(muted) })
+        controls.addView(button("Next saved image") { WallpaperScheduler.nextNow(this) })
+        pause = button(pauseText()) {
+            WidgetSettings.setPaused(this,!WidgetSettings.paused(this))
+            WallpaperScheduler.scheduleAll(this)
+            pause.text = pauseText()
+            status.text = makeStatus()
+        }
+        controls.addView(pause)
+        controls.addView(label("Pausing holds the current card. Daily downloads may still save new photos in the gallery.",13).apply { setTextColor(muted) })
 
-    private fun loadHistoryGallery() {
-        galleryLayout.removeAllViews()
+        val appearance = panel("Make the verse clear")
+        appearance.addView(label("Text size is automatically reduced only when needed to fit the full verse.",14))
+        val sizeLabel = label(getString(R.string.text_size_label,WidgetSettings.textSize(this)),14,true)
+        appearance.addView(sizeLabel)
+        val size = SeekBar(this).apply { max=12; progress=WidgetSettings.textSize(this@MainActivity)-16 }
+        appearance.addView(size)
+        val darkLabel = label(getString(R.string.darkness_label,WidgetSettings.darkness(this)),14,true)
+        appearance.addView(darkLabel)
+        val dark = SeekBar(this).apply { max=60; progress=WidgetSettings.darkness(this@MainActivity)-25 }
+        appearance.addView(dark)
+        size.setOnSeekBarChangeListener(seek { sizeLabel.text=getString(R.string.text_size_label,it+16) })
+        dark.setOnSeekBarChangeListener(seek { darkLabel.text=getString(R.string.darkness_label,it+25) })
+        appearance.addView(button("Apply appearance") {
+            WidgetSettings.setAppearance(this,size.progress+16,dark.progress+25)
+            perform { BibleWidgetProvider.refreshAll(this) }
+        })
 
-        val files = WallpaperHistoryStore.getHistoryFiles(this)
+        val battery = panel("Battery saver · default")
+        battery.addView(label("Saved images rotate about every 4 hours. A new photo downloads about once daily, only while charging on an unmetered connection (usually Wi-Fi).\n\nAndroid may delay updates. Keep battery mode Optimized. Cached photos remain visible offline; no continuously running service is needed. Scheduled work stops when the last widget is removed.",14))
+        val historyPanel = panel("Saved landscape photos")
+        historyPanel.addView(label("Tap a photo to preview it. Choose Use in widget to select it. All widget copies share this selection and appearance.",14).apply { setTextColor(muted) })
+        gallery = column()
+        historyPanel.addView(gallery)
+        historyPanel.addView(label("Keeps up to 40 ordinary photos plus the current photo and favorites. Ordinary photos also have an 80 MiB cap. Favorites are never automatically removed and can use extra storage.",12).apply { setTextColor(muted) })
 
-        if (files.isEmpty()) {
-            galleryLayout.addView(TextView(this).apply {
-                text = "No saved wallpapers yet. Tap Create New Wallpaper Now, or wait for the automatic background task."
-                textSize = 15f
+        val legacy = File(filesDir,"wallpaper_history")
+        if (legacy.exists() && legacy.listFiles().orEmpty().isNotEmpty()) {
+            val old = panel("Previous version")
+            old.addView(label("Your old portrait wallpapers are preserved, but are not used in this landscape widget. Deleting them here is optional.",14))
+            old.addView(button("Delete old portrait history") {
+                AlertDialog.Builder(this).setTitle("Delete old portrait history?")
+                    .setMessage("This deletes only the previous version's generated images. New widget images and favorites are kept.")
+                    .setNegativeButton("Keep",null).setPositiveButton("Delete") { _,_ ->
+                        perform { check(legacy.deleteRecursively()) { "Could not remove all old images" } }
+                        old.visibility=View.GONE
+                    }.show()
             })
-            return
         }
-
-        files.chunked(3).forEach { rowFiles ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER
-                setPadding(0, 0, 0, dp(10))
-            }
-
-            rowFiles.forEach { file ->
-                val image = ImageView(this).apply {
-                    scaleType = ImageView.ScaleType.CENTER_CROP
-                    setImageBitmap(loadThumbnail(file.absolutePath, dp(220), dp(220)))
-                    contentDescription = "Saved wallpaper"
-
-                    setOnClickListener {
-                        try {
-                            val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-                            WallpaperManager.getInstance(this@MainActivity).setBitmap(bitmap)
-
-                            getSharedPreferences(
-                                "saved_wallpaper_rotation_prefs",
-                                MODE_PRIVATE
-                            )
-                                .edit()
-                                .putString("last_rotated_wallpaper_path", file.absolutePath)
-                                .apply()
-
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Wallpaper set. Auto-rotation will still continue.",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        } catch (e: Exception) {
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Could not set wallpaper.",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
+        root.addView(button("Photos provided by Pexels ↗") { openUrl("https://www.pexels.com") })
+        root.addView(label("Bible Nature Widget · 2.0",12).apply { gravity=Gravity.CENTER; setTextColor(muted) })
+        refreshImages()
+    }
+    private fun makeStatus(running: Boolean = false): String {
+        val count = WallpaperHistoryStore.cards(this).size
+        val active = if (BibleWidgetProvider.hasWidgets(this)) "Widget placed" else "No widget placed · automatic work stopped"
+        val state = if (WidgetSettings.paused(this)) "Rotation paused" else "Rotation: about every 4 hours"
+        val message = if (running) "Working…" else if (downloadPending) "Download queued; waiting for a connection or Android to run it." else WidgetSettings.status(this)
+        return "$active\n$state · $count saved\n$message"
+    }
+    private fun pauseText() = if (WidgetSettings.paused(this)) "Resume automatic rotation" else "Pause automatic rotation"
+    private fun refreshImages() {
+        val generation = ++renderGeneration
+        val limit = galleryLimit
+        io.execute {
+            if (generation != renderGeneration) return@execute
+            try {
+                val cards = WallpaperHistoryStore.cards(this)
+                val current = WallpaperHistoryStore.current(this)
+                val rendered = WallpaperImageCreator.render(this,current,960,540)
+                val thumbs = cards.take(limit).map { it to WallpaperImageCreator.render(this,it,720,405) }
+                runOnUiThread {
+                    if (isDestroyed || generation != renderGeneration) {
+                        rendered.recycle(); thumbs.forEach { it.second.recycle() }; return@runOnUiThread
                     }
+                    preview.setImageBitmap(rendered)
+                    emptyNote.text = if (cards.isEmpty()) "Offline starter card · download a photo to begin." else "Current verse: ${current?.verse?.reference.orEmpty()}"
+                    gallery.removeAllViews()
+                    if (cards.isEmpty()) gallery.addView(label("No saved landscape photos yet.",15).apply { setPadding(0,dp(16),0,dp(16)) })
+                    thumbs.forEach { (card,bitmap) ->
+                        val item = column().apply { setPadding(0,dp(16),0,dp(10)) }
+                        val image = ImageView(this).apply {
+                            scaleType=ImageView.ScaleType.FIT_CENTER; adjustViewBounds=true
+                            setImageBitmap(bitmap); contentDescription="${card.verse.text} ${card.verse.reference}"
+                            setOnClickListener { showCard(card) }
+                        }
+                        item.addView(image,LinearLayout.LayoutParams(-1,dp(150)))
+                        item.addView(label("${if(card.favorite) "★ " else ""}${card.verse.reference}${if(card.id==current?.id) " · Current" else ""}",15,true))
+                        item.addView(label(dateFormat.format(Date(card.created)),12).apply { setTextColor(muted) })
+                        if (card.photographer.isNotBlank()) item.addView(label("Photo by ${card.photographer} on Pexels ↗",12).apply {
+                            setTextColor(muted); setPadding(0,dp(8),0,dp(8)); setOnClickListener { openUrl(card.photoUrl) }
+                        })
+                        item.addView(button("Use in widget") { perform { WallpaperHistoryStore.select(this,card.id); BibleWidgetProvider.refreshAll(this) } })
+                        val actions = LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
+                        actions.addView(button(if(card.favorite) "★ Unfavorite" else "☆ Favorite") {
+                            perform { WallpaperHistoryStore.favorite(this,card.id); WallpaperHistoryStore.prune(this) }
+                        },LinearLayout.LayoutParams(0,-2,1f))
+                        actions.addView(button("Delete") { confirmDelete(card) },LinearLayout.LayoutParams(0,-2,1f))
+                        item.addView(actions)
+                        gallery.addView(item)
+                    }
+                    if (cards.size>galleryLimit) gallery.addView(button("Show more photos") { galleryLimit+=12; refreshImages() })
                 }
-
-                val params = LinearLayout.LayoutParams(
-                    0,
-                    dp(110),
-                    1f
-                ).apply {
-                    setMargins(dp(4), dp(4), dp(4), dp(4))
-                }
-
-                row.addView(image, params)
-            }
-
-            if (rowFiles.size < 3) {
-                repeat(3 - rowFiles.size) {
-                    val spacer = TextView(this)
-                    row.addView(
-                        spacer,
-                        LinearLayout.LayoutParams(
-                            0,
-                            dp(150),
-                            1f
-                        )
-                    )
-                }
-            }
-
-            galleryLayout.addView(row)
+            } catch (_: Exception) { runOnUiThread { if (!isDestroyed) toast("Could not load a preview. Try reopening the app.") } }
         }
     }
-
-private fun loadThumbnail(path: String, reqWidth: Int, reqHeight: Int): android.graphics.Bitmap? {
-    val options = BitmapFactory.Options().apply {
-        inJustDecodeBounds = true
-    }
-
-    BitmapFactory.decodeFile(path, options)
-
-    options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
-    options.inJustDecodeBounds = false
-
-    return BitmapFactory.decodeFile(path, options)
-}
-
-private fun calculateInSampleSize(
-    options: BitmapFactory.Options,
-    reqWidth: Int,
-    reqHeight: Int
-): Int {
-    val height = options.outHeight
-    val width = options.outWidth
-    var inSampleSize = 1
-
-    if (height > reqHeight || width > reqWidth) {
-        val halfHeight = height / 2
-        val halfWidth = width / 2
-
-        while (
-            halfHeight / inSampleSize >= reqHeight &&
-            halfWidth / inSampleSize >= reqWidth
-        ) {
-            inSampleSize *= 2
+    private fun showCard(card: VerseCard) {
+        val image = ImageView(this).apply { adjustViewBounds=true; scaleType=ImageView.ScaleType.FIT_CENTER }
+        val dialog = AlertDialog.Builder(this).setTitle(card.verse.reference).setView(image)
+            .setNegativeButton("Close",null).setPositiveButton("Use in widget") { _,_ ->
+                perform { WallpaperHistoryStore.select(this,card.id); BibleWidgetProvider.refreshAll(this) }
+            }.create()
+        dialog.show()
+        io.execute {
+            val bitmap = WallpaperImageCreator.render(this,card,960,540)
+            runOnUiThread { if(dialog.isShowing) image.setImageBitmap(bitmap) else bitmap.recycle() }
         }
     }
-
-    return inSampleSize
-}
-    
-    private fun dp(value: Int): Int {
-        return (value * resources.displayMetrics.density).toInt()
+    private fun confirmDelete(card: VerseCard) {
+        AlertDialog.Builder(this).setTitle(if(card.favorite) "Delete this favorite?" else "Delete this photo?")
+            .setMessage("The saved photo and its verse card will be removed.")
+            .setNegativeButton("Keep",null).setPositiveButton("Delete") { _,_ ->
+                perform { WallpaperHistoryStore.delete(this,card.id); BibleWidgetProvider.refreshAll(this) }
+            }.show()
     }
+    private fun perform(action: () -> Unit) {
+        io.execute {
+            try {
+                action()
+                runOnUiThread { if(!isDestroyed) { status.text=makeStatus(); refreshImages() } }
+            } catch (_: Exception) { runOnUiThread { if(!isDestroyed) toast("Could not complete that change. Please try again.") } }
+        }
+    }
+    private fun requestWidget() {
+        val manager = AppWidgetManager.getInstance(this)
+        if (manager.isRequestPinAppWidgetSupported) manager.requestPinAppWidget(ComponentName(this,BibleWidgetProvider::class.java),null,null)
+        else toast("Long-press the home screen → Widgets → Bible Nature Widget.")
+    }
+    private fun openUrl(value: String) {
+        val uri = Uri.parse(value)
+        if (uri.scheme != "https") return
+        try { startActivity(Intent(Intent.ACTION_VIEW,uri)) } catch (_: Exception) { toast("No browser available.") }
+    }
+    private fun column() = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
+    private fun label(value: String,size: Int,bold: Boolean=false) = TextView(this).apply {
+        text=value; textSize=size.toFloat(); setTextColor(ink); setLineSpacing(dp(3).toFloat(),1f)
+        if(bold) setTypeface(typeface,Typeface.BOLD)
+    }
+    private fun button(value: String,action: () -> Unit) = Button(this).apply {
+        text=value; isAllCaps=false; minHeight=dp(48); setTextColor(ink)
+        setOnClickListener { action() }
+    }
+    private fun panel(title: String): LinearLayout {
+        val box=column().apply {
+            setPadding(dp(16),dp(16),dp(16),dp(16))
+            background=GradientDrawable().apply { setColor(Color.WHITE); cornerRadius=dp(18).toFloat() }
+        }
+        box.addView(label(title,19,true).apply { setPadding(0,0,0,dp(12)) })
+        root.addView(box,LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(18) })
+        return box
+    }
+    private fun seek(change:(Int)->Unit) = object: SeekBar.OnSeekBarChangeListener {
+        override fun onProgressChanged(bar:SeekBar?,progress:Int,fromUser:Boolean) { change(progress) }
+        override fun onStartTrackingTouch(bar:SeekBar?) {}
+        override fun onStopTrackingTouch(bar:SeekBar?) {}
+    }
+    private fun toast(message:String) { Toast.makeText(this,message,Toast.LENGTH_LONG).show() }
+    private fun dp(value:Int) = (value*resources.displayMetrics.density).toInt()
 }

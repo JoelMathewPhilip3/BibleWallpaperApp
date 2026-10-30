@@ -3,99 +3,55 @@ package com.joel.biblewallpaper
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
-import kotlin.random.Random
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+
+class PhotoHttpException(val status: Int) : IOException("Photo service returned HTTP $status")
+data class NaturePhoto(val bitmap: Bitmap, val id: String, val photographer: String, val photoUrl: String)
 
 object PexelsPhotoProvider {
     private const val API_KEY = "jkUOQWpdX73pD2zpGUnw0oLyzHbHuM7fCxscFF1BcpFKk9cShmPnysxM"
-    private const val PREFS = "pexels_photo_prefs"
-    private const val USED_PHOTO_IDS = "used_pexels_photo_ids"
+    private val client = OkHttpClient.Builder()
+        .addInterceptor { chain -> chain.proceed(chain.request().newBuilder()
+            .header("User-Agent", "BibleNatureWidget/2.0 (Android)").build()) }
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS).callTimeout(60, TimeUnit.SECONDS).build()
+    private val queries = listOf("mountain landscape", "lake sunrise", "ocean sunset", "forest landscape",
+        "waterfall nature", "green meadow", "snow mountains", "river valley", "tropical beach", "northern lights landscape")
 
-    private val client = OkHttpClient()
-
-    private val natureQueries = listOf(
-        "mountain landscape",
-        "forest trail",
-        "waterfall nature",
-        "lake sunrise",
-        "ocean sunset",
-        "green meadow",
-        "misty forest",
-        "snow mountains",
-        "river valley",
-        "wildflowers field",
-        "pine forest",
-        "tropical beach",
-        "desert sunrise",
-        "autumn forest",
-        "northern lights landscape"
-    )
-
-    fun getFreshNaturePhoto(context: Context): Pair<Bitmap, String> {
-        val query = natureQueries.random()
-        val page = Random.nextInt(1, 40)
-        val url =
-            "https://api.pexels.com/v1/search?query=${query.replace(" ", "%20")}&orientation=portrait&per_page=15&page=$page"
-
-        val request = Request.Builder()
-            .url(url)
-            .addHeader("Authorization", API_KEY)
-            .build()
-
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IllegalStateException("Pexels search failed: ${response.code}")
-            }
-
-            val body = response.body?.string() ?: throw IllegalStateException("Empty Pexels response")
-            val photos = JSONObject(body).getJSONArray("photos")
-
-            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val usedIds = prefs.getStringSet(USED_PHOTO_IDS, emptySet()).orEmpty().toMutableSet()
-
-            var chosenId: String? = null
-            var chosenUrl: String? = null
-
-            for (i in 0 until photos.length()) {
-                val photo = photos.getJSONObject(i)
-                val id = photo.getLong("id").toString()
-
-                if (!usedIds.contains(id)) {
-                    chosenId = id
-                    chosenUrl = photo.getJSONObject("src").getString("portrait")
-                    break
+    fun getFreshNaturePhoto(context: Context): NaturePhoto {
+        val used = WallpaperHistoryStore.usedPhotoIds(context)
+        repeat(3) { attempt ->
+            val query = queries.random()
+            val page = if (attempt == 2) 1 else (1..3).random()
+            val url = "https://api.pexels.com/v1/search".toHttpUrl().newBuilder()
+                .addQueryParameter("query", query).addQueryParameter("orientation", "landscape")
+                .addQueryParameter("per_page", "30").addQueryParameter("page", page.toString()).build()
+            val photos = client.newCall(Request.Builder().url(url).header("Authorization", API_KEY).build())
+                .execute().use { response ->
+                    if (!response.isSuccessful) throw PhotoHttpException(response.code)
+                    JSONObject(response.body?.string() ?: throw IOException("Empty photo search response"))
+                        .getJSONArray("photos")
                 }
-            }
-
-            if (chosenId == null || chosenUrl == null) {
-                usedIds.clear()
-                val photo = photos.getJSONObject(0)
-                chosenId = photo.getLong("id").toString()
-                chosenUrl = photo.getJSONObject("src").getString("portrait")
-            }
-
-            val imageRequest = Request.Builder()
-                .url(chosenUrl)
-                .build()
-
-            client.newCall(imageRequest).execute().use { imageResponse ->
-                if (!imageResponse.isSuccessful) {
-                    throw IllegalStateException("Image download failed: ${imageResponse.code}")
+            val candidates = (0 until photos.length()).map { photos.getJSONObject(it) }
+                .filter { it.optInt("width") > it.optInt("height") }
+            val fresh = candidates.filterNot { it.getLong("id").toString() in used }
+            val selected = fresh.randomOrNull() ?: if (attempt == 2) candidates.randomOrNull() else null
+            if (selected != null) {
+                val imageUrl = selected.getJSONObject("src").getString("landscape")
+                val bitmap = client.newCall(Request.Builder().url(imageUrl).build()).execute().use { response ->
+                    if (!response.isSuccessful) throw PhotoHttpException(response.code)
+                    val bytes = response.body?.bytes() ?: throw IOException("Empty photo download")
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: throw IOException("Invalid photo")
                 }
-
-                val bytes = imageResponse.body?.bytes()
-                    ?: throw IllegalStateException("Empty image body")
-
-                val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    ?: throw IllegalStateException("Could not decode image")
-
-                usedIds.add(chosenId)
-                prefs.edit().putStringSet(USED_PHOTO_IDS, usedIds).apply()
-
-                return bitmap to chosenId
+                return NaturePhoto(bitmap, selected.getLong("id").toString(),
+                    selected.optString("photographer"), selected.optString("url"))
             }
         }
+        throw IOException("No landscape photos found. Saved images are still available.")
     }
 }

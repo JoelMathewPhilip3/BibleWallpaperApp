@@ -1,110 +1,87 @@
 package com.joel.biblewallpaper
 
+import android.content.Context
 import android.graphics.*
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 
-data class GeneratedWallpaper(
-    val bitmap: Bitmap,
-    val verse: Verse,
-    val sceneName: String
-)
-
+/** Images remain separate from verses in storage; this composes only the displayed card. */
 object WallpaperImageCreator {
-    fun createFromPhoto(
-        source: Bitmap,
-        width: Int,
-        height: Int,
-        verse: Verse,
-        photoId: String
-    ): GeneratedWallpaper {
-        val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(output)
-
-        drawPhotoCover(canvas, source, width, height)
-        drawReadableOverlay(canvas, width, height, verse)
-
-        return GeneratedWallpaper(
-            bitmap = output,
-            verse = verse,
-            sceneName = "Pexels Photo $photoId"
-        )
-    }
-
-    private fun drawPhotoCover(canvas: Canvas, source: Bitmap, w: Int, h: Int) {
-        val srcRatio = source.width.toFloat() / source.height.toFloat()
-        val dstRatio = w.toFloat() / h.toFloat()
-
-        val srcRect = if (srcRatio > dstRatio) {
-            val newWidth = (source.height * dstRatio).toInt()
-            val left = (source.width - newWidth) / 2
-            Rect(left, 0, left + newWidth, source.height)
-        } else {
-            val newHeight = (source.width / dstRatio).toInt()
-            val top = (source.height - newHeight) / 2
-            Rect(0, top, source.width, top + newHeight)
-        }
-
-        val dstRect = Rect(0, 0, w, h)
-        canvas.drawBitmap(source, srcRect, dstRect, Paint(Paint.ANTI_ALIAS_FLAG))
-    }
-
-    private fun drawReadableOverlay(canvas: Canvas, w: Int, h: Int, verse: Verse) {
-        val dimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(95, 0, 0, 0)
-        }
-        canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), dimPaint)
-
-        val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(150, 0, 0, 0)
-        }
-        val boxRect = RectF(w * .075f, h * .30f, w * .925f, h * .67f)
-        canvas.drawRoundRect(boxRect, 44f, 44f, boxPaint)
-
-        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textAlign = Paint.Align.CENTER
-            typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
-            textSize = w * .062f
-        }
-
-        val refPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(255, 237, 175)
-            textAlign = Paint.Align.CENTER
-            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
-            textSize = w * .043f
-        }
-
-        val lines = wrapText(verse.text, textPaint, w * .72f)
-        val lineHeight = textPaint.textSize * 1.24f
-        val totalHeight = lines.size * lineHeight + refPaint.textSize * 1.8f
-
-        var y = h * .485f - totalHeight / 2 + lineHeight
-
-        for (line in lines) {
-            canvas.drawText(line, w / 2f, y, textPaint)
-            y += lineHeight
-        }
-
-        canvas.drawText(verse.reference, w / 2f, y + refPaint.textSize * .75f, refPaint)
-    }
-
-    private fun wrapText(text: String, paint: Paint, maxWidth: Float): List<String> {
-        val words = text.split(" ")
-        val lines = mutableListOf<String>()
-        var current = ""
-
-        for (word in words) {
-            val test = if (current.isEmpty()) word else "$current $word"
-
-            if (paint.measureText(test) <= maxWidth) {
-                current = test
+    fun render(context: Context, card: VerseCard?, width: Int = 960, height: Int = 540): Bitmap {
+        val w = width.coerceIn(360, 960)
+        val h = height.coerceIn(180, 720)
+        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val bounds = RectF(0f, 0f, w.toFloat(), h.toFloat())
+        val radius = w * .045f
+        canvas.clipPath(Path().apply { addRoundRect(bounds, radius, radius, Path.Direction.CW) })
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        var source: Bitmap? = null
+        try { if (card != null) source = BitmapFactory.decodeFile(card.image.absolutePath) } catch (_: Exception) { }
+        if (source != null) {
+            val ratio = w.toFloat() / h
+            val src = if (source.width.toFloat() / source.height > ratio) {
+                val sw = (source.height * ratio).toInt().coerceAtLeast(1)
+                Rect((source.width-sw)/2, 0, (source.width+sw)/2, source.height)
             } else {
-                if (current.isNotEmpty()) lines.add(current)
-                current = word
+                val sh = (source.width / ratio).toInt().coerceAtLeast(1)
+                Rect(0, (source.height-sh)/2, source.width, (source.height+sh)/2)
             }
+            canvas.drawBitmap(source, src, bounds, paint)
+            source.recycle()
+        } else {
+            paint.shader = LinearGradient(0f, 0f, w.toFloat(), h.toFloat(),
+                Color.rgb(49,85,80), Color.rgb(15,28,44), Shader.TileMode.CLAMP)
+            canvas.drawRect(bounds, paint)
+            paint.shader = null
         }
-
-        if (current.isNotEmpty()) lines.add(current)
-
-        return lines
+        val dark = WidgetSettings.darkness(context) / 100f
+        paint.shader = LinearGradient(0f, 0f, 0f, h.toFloat(),
+            intArrayOf(Color.argb(25,0,0,0), Color.argb((dark*160).toInt(),0,0,0), Color.argb((dark*230).toInt(),0,0,0)),
+            floatArrayOf(0f,.45f,1f), Shader.TileMode.CLAMP)
+        canvas.drawRect(bounds, paint)
+        paint.shader = null
+        val verse = card?.verse ?: Verse("Be still, and know that I am God.", "Psalm 46:10")
+        val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
+            setShadowLayer(w*.003f, 0f, w*.002f, Color.BLACK)
+        }
+        val ref = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(255,237,185)
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+        }
+        val maxWidth = (w*.82f).toInt()
+        val availableHeight = h*.72f
+        var size = WidgetSettings.textSize(context) * w / 340f
+        var quote: StaticLayout
+        var reference: StaticLayout
+        var gap: Float
+        while (true) {
+            text.textSize = size
+            ref.textSize = size*.70f
+            quote = layout(verse.text, text, maxWidth)
+            reference = layout(verse.reference, ref, maxWidth)
+            gap = size*.42f
+            if (quote.height + reference.height + gap <= availableHeight || size <= 10f) break
+            size *= .94f
+        }
+        val total = quote.height + reference.height + gap
+        val top = (h-total)/2f
+        paint.color = Color.argb((dark*235).toInt(), 0,0,0)
+        canvas.drawRoundRect(RectF(w*.055f, (top-h*.06f).coerceAtLeast(h*.03f), w*.945f,
+            (top+total+h*.06f).coerceAtMost(h*.97f)), w*.025f,w*.025f,paint)
+        canvas.save()
+        canvas.translate((w-maxWidth)/2f, top)
+        quote.draw(canvas)
+        canvas.translate(0f, quote.height+gap)
+        reference.draw(canvas)
+        canvas.restore()
+        return bitmap
     }
+    private fun layout(value: String, paint: TextPaint, width: Int): StaticLayout =
+        StaticLayout.Builder.obtain(value,0,value.length,paint,width)
+            .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false)
+            .setLineSpacing(0f,1.12f).build()
 }

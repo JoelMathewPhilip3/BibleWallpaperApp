@@ -1,121 +1,63 @@
 package com.joel.biblewallpaper
 
 import android.content.Context
-import androidx.work.Constraints
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
+import androidx.work.*
 import java.util.concurrent.TimeUnit
 
 object WallpaperScheduler {
-    private const val PHOTO_DOWNLOAD_WORK_NAME = "bible_wallpaper_photo_download_worker"
-    private const val SAVED_ROTATION_WORK_NAME = "saved_wallpaper_60_min_rotation_worker"
-
-    private const val PREFS = "wallpaper_settings"
-    private const val NEW_WALLPAPER_CREATION_ENABLED = "new_wallpaper_creation_enabled"
-
-    fun isNewWallpaperCreationEnabled(context: Context): Boolean {
-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(NEW_WALLPAPER_CREATION_ENABLED, true)
+    const val TAG = "bible_widget_work"
+    private const val ROTATION = "bible_widget_rotation_v2"
+    private const val DOWNLOAD = "bible_widget_download_v2"
+    private const val MANUAL_DOWNLOAD = "bible_widget_manual_download_v2"
+    private const val MANUAL_NEXT = "bible_widget_manual_next_v2"
+    fun migrate(c: Context) {
+        val prefs = c.getSharedPreferences("bible_widget_migration", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("v2", false)) return
+        val wm = WorkManager.getInstance(c)
+        wm.cancelUniqueWork("bible_wallpaper_photo_download_worker")
+        wm.cancelUniqueWork("saved_wallpaper_60_min_rotation_worker")
+        // v1 manual jobs had no unique name. Cancel by class tag as well.
+        wm.cancelAllWorkByTag("com.joel.biblewallpaper.WallpaperWorker")
+        wm.cancelAllWorkByTag("com.joel.biblewallpaper.SavedWallpaperRotationWorker")
+        prefs.edit().putBoolean("v2", true).apply()
+        // Original PNGs are portrait composites; do not use them as landscape cards.
+        // Leave legacy images intact; users can remove them explicitly in the app.
     }
-
-    fun stopNewWallpaperCreation(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean(NEW_WALLPAPER_CREATION_ENABLED, false)
-            .apply()
-
-        WorkManager.getInstance(context).cancelUniqueWork(PHOTO_DOWNLOAD_WORK_NAME)
+    fun scheduleAll(c: Context) {
+        migrate(c)
+        val wm = WorkManager.getInstance(c)
+        if (!BibleWidgetProvider.hasWidgets(c)) {
+            cancelScheduled(c)
+            return
+        }
+        if (WidgetSettings.paused(c)) wm.cancelUniqueWork(ROTATION) else {
+            val rotation = PeriodicWorkRequestBuilder<WidgetRotationWorker>(4, TimeUnit.HOURS, 1, TimeUnit.HOURS)
+                .setInitialDelay(4, TimeUnit.HOURS)
+                .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).build())
+                .addTag(TAG).build()
+            wm.enqueueUniquePeriodicWork(ROTATION, ExistingPeriodicWorkPolicy.KEEP, rotation)
+        }
+        val download = PeriodicWorkRequestBuilder<WidgetDownloadWorker>(24,TimeUnit.HOURS,6,TimeUnit.HOURS)
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.UNMETERED)
+                .setRequiresCharging(true).setRequiresBatteryNotLow(true).setRequiresStorageNotLow(true).build())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL,30,TimeUnit.MINUTES)
+            .addTag(TAG).build()
+        wm.enqueueUniquePeriodicWork(DOWNLOAD, ExistingPeriodicWorkPolicy.KEEP, download)
     }
-
-    fun startNewWallpaperCreation(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean(NEW_WALLPAPER_CREATION_ENABLED, true)
-            .apply()
-
-        scheduleEvery8Hours(context)
+    fun cancelScheduled(c: Context) {
+        val wm = WorkManager.getInstance(c)
+        listOf(ROTATION, DOWNLOAD, MANUAL_DOWNLOAD, MANUAL_NEXT).forEach { wm.cancelUniqueWork(it) }
     }
-
-    fun scheduleEvery8Hours(context: Context) {
-        if (!isNewWallpaperCreationEnabled(context)) return
-
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .setRequiresBatteryNotLow(true)
-            .build()
-
-        val request = PeriodicWorkRequestBuilder<WallpaperWorker>(
-            8,
-            TimeUnit.HOURS,
-            2,
-            TimeUnit.HOURS
-        )
-            .setConstraints(constraints)
-            .build()
-
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            PHOTO_DOWNLOAD_WORK_NAME,
-            ExistingPeriodicWorkPolicy.UPDATE,
-            request
-        )
+    fun downloadNow(c: Context) {
+        WorkManager.getInstance(c).enqueueUniqueWork(MANUAL_DOWNLOAD, ExistingWorkPolicy.KEEP,
+            OneTimeWorkRequestBuilder<WidgetDownloadWorker>()
+                .setInputData(workDataOf("manual" to true))
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED)
+                    .setRequiresStorageNotLow(true).build()).addTag(TAG).addTag("manual_download").build())
     }
-
-    fun scheduleNextSavedWallpaperRotation(context: Context) {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
-            .setRequiresBatteryNotLow(true)
-            .build()
-
-        val request = OneTimeWorkRequestBuilder<SavedWallpaperRotationWorker>()
-            .setInitialDelay(60, TimeUnit.MINUTES)
-            .setConstraints(constraints)
-            .build()
-
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            SAVED_ROTATION_WORK_NAME,
-            ExistingWorkPolicy.KEEP,
-            request
-        )
-    }
-
-    fun scheduleNextSavedWallpaperRotationFromWorker(context: Context) {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
-            .setRequiresBatteryNotLow(true)
-            .build()
-
-        val request = OneTimeWorkRequestBuilder<SavedWallpaperRotationWorker>()
-            .setInitialDelay(60, TimeUnit.MINUTES)
-            .setConstraints(constraints)
-            .build()
-
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            SAVED_ROTATION_WORK_NAME,
-            ExistingWorkPolicy.APPEND_OR_REPLACE,
-            request
-        )
-    }
-
-    fun scheduleAll(context: Context) {
-        scheduleEvery8Hours(context)
-        scheduleNextSavedWallpaperRotation(context)
-    }
-
-    fun runOnceNow(context: Context) {
-        if (!isNewWallpaperCreationEnabled(context)) return
-
-        val request = OneTimeWorkRequestBuilder<WallpaperWorker>()
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build()
-            )
-            .build()
-
-        WorkManager.getInstance(context).enqueue(request)
+    fun nextNow(c: Context) {
+        WorkManager.getInstance(c).enqueueUniqueWork(MANUAL_NEXT, ExistingWorkPolicy.KEEP,
+            OneTimeWorkRequestBuilder<WidgetRotationWorker>().setInputData(workDataOf("manual" to true))
+                .addTag(TAG).build())
     }
 }
